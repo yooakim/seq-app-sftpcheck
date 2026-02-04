@@ -296,7 +296,7 @@ install_app() {
 
     # Restart Seq container to refresh bind mount (ensures it sees the latest package)
     print_warning "Restarting Seq container to refresh package feed..."
-    docker compose restart seq > /dev/null 2>&1
+    docker compose restart seq
     sleep 3
 
     # Get the local feed ID (find the "Local Packages" feed)
@@ -350,8 +350,8 @@ setup_instance() {
     # Setup password-based authentication instance
     setup_password_instance "$app_id"
 
-    # Setup SSH key-based authentication instance
-    setup_keyauth_instance "$app_id"
+    # Setup SSH key-based authentication instance (non-fatal under set -e)
+    setup_keyauth_instance "$app_id" || true
 
     echo ""
     seqcli appinstance list -s "$SEQ_URL"
@@ -417,7 +417,7 @@ setup_keyauth_instance() {
     fi
 
     # Convert private key to Base64
-    local private_key_base64=$(base64 -w 0 "$key_file")
+    local private_key_base64=$(base64 "$key_file" | tr -d '\n')
 
     # Note: Inside the Seq container, we need to use 'sftp-keyauth' as the hostname (docker network)
     # and port 22 (internal port), not localhost:2223
