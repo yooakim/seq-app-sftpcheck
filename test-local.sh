@@ -417,7 +417,7 @@ setup_keyauth_instance() {
     fi
 
     # Convert private key to Base64
-    local private_key_base64=$(base64 -w 0 "$key_file")
+    local private_key_base64=$(base64 "$key_file" | tr -d '\n')
 
     # Note: Inside the Seq container, we need to use 'sftp-keyauth' as the hostname (docker network)
     # and port 22 (internal port), not localhost:2223
