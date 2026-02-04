@@ -294,6 +294,11 @@ install_app() {
 
     print_info "Package: $pkg_file"
 
+    # Restart Seq container to refresh bind mount (ensures it sees the latest package)
+    print_warning "Restarting Seq container to refresh package feed..."
+    docker compose restart seq > /dev/null 2>&1
+    sleep 3
+
     # Get the local feed ID (find the "Local Packages" feed)
     local feed_id=$(seqcli feed list -s "$SEQ_URL" --json 2>/dev/null | grep "Local Packages" | grep -o '"Id": *"nugetfeed-[0-9]*"' | grep -o 'nugetfeed-[0-9]*')
 
@@ -324,7 +329,7 @@ install_app() {
 
 # Create an app instance in Seq
 setup_instance() {
-    print_header "Setting Up App Instance"
+    print_header "Setting Up App Instances"
 
     # Check if seqcli is available
     if ! command -v seqcli &> /dev/null; then
@@ -342,20 +347,34 @@ setup_instance() {
 
     print_info "App ID: $app_id"
 
+    # Setup password-based authentication instance
+    setup_password_instance "$app_id"
+
+    # Setup SSH key-based authentication instance
+    setup_keyauth_instance "$app_id"
+
+    echo ""
+    seqcli appinstance list -s "$SEQ_URL"
+}
+
+# Create password-based authentication instance
+setup_password_instance() {
+    local app_id="$1"
+
+    echo ""
+    print_warning "Setting up password authentication instance..."
+
     # Check if instance already exists
-    local existing=$(seqcli appinstance list -s "$SEQ_URL" 2>/dev/null | grep -c "Test SFTP Check" || true)
+    local existing=$(seqcli appinstance list -s "$SEQ_URL" 2>/dev/null | grep -c "Test SFTP Check (Password)" || true)
     if [ "$existing" != "0" ]; then
-        print_warning "Instance 'Test SFTP Check' already exists."
-        seqcli appinstance list -s "$SEQ_URL"
+        print_gray "Instance 'Test SFTP Check (Password)' already exists."
         return 0
     fi
-
-    print_warning "Creating app instance..."
 
     # Note: Inside the Seq container, we need to use 'sftp' as the hostname (docker network)
     # and port 22 (internal port), not localhost:2222
     seqcli appinstance create \
-        -t "Test SFTP Check" \
+        -t "Test SFTP Check (Password)" \
         --app "$app_id" \
         -p "SftpHost=sftp" \
         -p "Port=22" \
@@ -365,19 +384,62 @@ setup_instance() {
         -p "CheckIntervalSeconds=$CHECK_INTERVAL_SECONDS" \
         -p "ConnectionTimeoutSeconds=30" \
         -p "TestDirectoryPath=$TEST_DIRECTORY" \
-        -p "FriendlyName=Docker Test SFTP" \
+        -p "FriendlyName=Docker Test SFTP (Password)" \
         -p "LogSuccessfulChecks=true" \
         -s "$SEQ_URL"
 
-    print_success "App instance created successfully!"
+    print_success "Password auth instance created!"
+    print_info "  SFTP Host:      sftp:22 (Docker internal)"
+    print_info "  Username:       $SFTP_USERNAME"
+    print_info "  Auth Method:    Password"
+}
+
+# Create SSH key-based authentication instance
+setup_keyauth_instance() {
+    local app_id="$1"
+
     echo ""
-    print_info "Instance configuration:"
-    print_gray "  SFTP Host:      sftp:22 (Docker internal)"
-    print_gray "  Username:       $SFTP_USERNAME"
-    print_gray "  Check Interval: ${CHECK_INTERVAL_SECONDS}s"
-    print_gray "  Test Directory: $TEST_DIRECTORY"
-    echo ""
-    seqcli appinstance list -s "$SEQ_URL"
+    print_warning "Setting up SSH key authentication instance..."
+
+    # Check if instance already exists
+    local existing=$(seqcli appinstance list -s "$SEQ_URL" 2>/dev/null | grep -c "Test SFTP Check (SSH Key)" || true)
+    if [ "$existing" != "0" ]; then
+        print_gray "Instance 'Test SFTP Check (SSH Key)' already exists."
+        return 0
+    fi
+
+    # Check if private key file exists
+    local key_file="./docker/sftp/keys/test_key"
+    if [ ! -f "$key_file" ]; then
+        print_error "SSH private key not found at $key_file"
+        print_warning "Skipping SSH key authentication instance setup."
+        return 1
+    fi
+
+    # Convert private key to Base64
+    local private_key_base64=$(base64 -w 0 "$key_file")
+
+    # Note: Inside the Seq container, we need to use 'sftp-keyauth' as the hostname (docker network)
+    # and port 22 (internal port), not localhost:2223
+    seqcli appinstance create \
+        -t "Test SFTP Check (SSH Key)" \
+        --app "$app_id" \
+        -p "SftpHost=sftp-keyauth" \
+        -p "Port=22" \
+        -p "Username=keyuser" \
+        -p "AuthenticationMethod=PrivateKey" \
+        -p "PrivateKeyBase64=$private_key_base64" \
+        -p "CheckIntervalSeconds=$CHECK_INTERVAL_SECONDS" \
+        -p "ConnectionTimeoutSeconds=30" \
+        -p "TestDirectoryPath=$TEST_DIRECTORY" \
+        -p "FriendlyName=Docker Test SFTP (SSH Key)" \
+        -p "LogSuccessfulChecks=true" \
+        -s "$SEQ_URL"
+
+    print_success "SSH key auth instance created!"
+    print_info "  SFTP Host:      sftp-keyauth:22 (Docker internal)"
+    print_info "  Username:       keyuser"
+    print_info "  Auth Method:    PrivateKey"
 }
 
 # Full setup: install app and create instance
