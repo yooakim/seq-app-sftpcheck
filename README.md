@@ -281,7 +281,7 @@ If you prefer testing without Docker or want faster iteration:
 ### Development Requirements
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop) (for local testing)
+- [Docker](https://www.docker.com/) (for local testing) - Docker Engine on Linux or Docker Desktop on Windows/macOS
 - [seqcli](https://github.com/datalust/seqcli) (optional): `dotnet tool install -g seqcli`
 
 ## Dependencies
