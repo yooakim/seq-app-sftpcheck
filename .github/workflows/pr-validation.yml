@@ -16,7 +16,6 @@ on:
       - reopened
 
 env:
-  DOTNET_VERSION: '10.0.x'
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
@@ -35,7 +34,9 @@ jobs:
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
+          dotnet-version: |
+            6.0.x
+            8.0.x
 
       - name: Cache NuGet packages
         uses: actions/cache@v4
@@ -83,7 +84,7 @@ jobs:
         if: always()
         with:
           name: Test Results
-          path: './TestResults/**/*.trx'
+          path: "./TestResults/**/*.trx"
           reporter: dotnet-trx
           fail-on-error: true
 
@@ -111,7 +112,9 @@ jobs:
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
+          dotnet-version: |
+            6.0.x
+            8.0.x
 
       - name: Restore dependencies
         run: dotnet restore
