@@ -350,8 +350,8 @@ setup_instance() {
     # Setup password-based authentication instance
     setup_password_instance "$app_id"
 
-    # Setup SSH key-based authentication instance
-    setup_keyauth_instance "$app_id"
+    # Setup SSH key-based authentication instance (non-fatal under set -e)
+    setup_keyauth_instance "$app_id" || true
 
     echo ""
     seqcli appinstance list -s "$SEQ_URL"
