@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- Package metadata -->
+    <PackageId>Seq.App.SftpCheck</PackageId>
+    <Description>Periodically checks SFTP host connectivity and logs results to Seq.</Description>
+    <Authors>Joakim Westin</Authors>
+    <PackageTags>seq-app</PackageTags>
+    <PackageProjectUrl>https://github.com/yooakim/seq-app-sftpcheck</PackageProjectUrl>
+    <PackageIcon>seq-app-sftpcheck.png</PackageIcon>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/yooakim/seq-app-sftpcheck</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Seq.App.SftpCheck.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Seq.Apps provides the base classes and interfaces for Seq apps -->
+    <PackageReference Include="Seq.Apps" Version="2023.4.0" />
+
+    <!-- SSH.NET is a pure managed C# SSH/SFTP library -->
+    <PackageReference Include="SSH.NET" Version="2024.2.0" />
+  </ItemGroup>
+
+  <!--
+    Seq apps must include all dependencies as files in the package,
+    not as NuGet package references. This section handles that.
+  -->
+  <ItemGroup>
+    <None Include="../../asset/seq-app-sftpcheck.png" Pack="true" Visible="false" PackagePath="" />
+    <None Include="../../LICENSE" Pack="true" PackagePath="" />
+    <!-- Include published DLLs except for assemblies provided by Seq -->
+    <None Include="./obj/publish/**/*"
+          Exclude="./obj/publish/$(MSBuildProjectName).dll;./obj/publish/Seq.Apps.dll;./obj/publish/Serilog.dll"
+          Pack="true"
+          PackagePath="lib/$(TargetFramework)" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,42 @@
+# Set default behavior to automatically normalize line endings
+* text=auto
+
+# Explicitly declare text files
+*.cs text diff=csharp
+*.csproj text
+*.sln text
+*.props text
+*.targets text
+*.json text
+*.xml text
+*.md text
+*.txt text
+*.yml text
+*.yaml text
+*.ps1 text eol=crlf
+*.sh text eol=lf
+*.config text
+*.DotSettings text
+
+# Declare files that will always have CRLF line endings on checkout
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Declare files that will always have LF line endings on checkout
+*.sh text eol=lf
+
+# Denote all files that are truly binary and should not be modified
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.dll binary
+*.exe binary
+*.pdb binary
+*.nupkg binary
+*.snupkg binary
+*.zip binary
+*.7z binary
+*.tar binary
+*.gz binary

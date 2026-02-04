@@ -1,0 +1,59 @@
+# GitHub Actions Labeler Configuration
+# Used by the actions/labeler action to automatically label PRs based on changed files.
+#
+# Documentation: https://github.com/actions/labeler
+
+# Core application code
+app:
+  - changed-files:
+      - any-glob-to-any-file: 'src/**/*.cs'
+
+# Test changes
+tests:
+  - changed-files:
+      - any-glob-to-any-file: 'test/**/*'
+
+# Documentation changes
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*.md'
+          - 'docs/**/*'
+
+# Build and CI configuration
+build:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '*.ps1'
+          - '*.sh'
+          - 'Build.ps1'
+          - 'Directory.Build.props'
+          - 'global.json'
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: '.github/**/*'
+
+# Docker configuration
+docker:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docker-compose*.yml'
+          - 'docker/**/*'
+          - 'Dockerfile*'
+
+# Project configuration
+config:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*.csproj'
+          - '**/*.sln'
+          - '**/*.props'
+          - '**/*.targets'
+
+# Dependencies
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/packages.lock.json'
+          - '**/*.csproj'

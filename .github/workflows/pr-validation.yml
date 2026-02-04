@@ -1,0 +1,148 @@
+# Pull Request Validation Workflow
+#
+# Runs on all pull requests to ensure code quality before merging.
+# Includes: build, test, code analysis, and format checking.
+
+name: PR Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  validate:
+    name: Validate PR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Check code formatting
+        run: |
+          dotnet format --verify-no-changes --verbosity diagnostic || {
+            echo "::error::Code formatting issues detected. Run 'dotnet format' locally and commit the changes."
+            exit 1
+          }
+        continue-on-error: true
+
+      - name: Build solution
+        run: dotnet build -c Release --no-restore -warnaserror
+
+      - name: Run tests
+        run: |
+          dotnet test -c Release --no-build \
+            --verbosity normal \
+            --logger "trx;LogFileName=test-results.trx" \
+            --logger "console;verbosity=detailed" \
+            --collect:"XPlat Code Coverage" \
+            --results-directory ./TestResults
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ github.run_number }}
+          path: |
+            ./TestResults/**/*.trx
+            ./TestResults/**/coverage.cobertura.xml
+          retention-days: 7
+
+      - name: Generate test report
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Test Results
+          path: './TestResults/**/*.trx'
+          reporter: dotnet-trx
+          fail-on-error: true
+
+      - name: Verify package creation
+        run: |
+          cd src/Seq.App.SftpCheck
+          dotnet publish -c Release -o ./obj/publish --version-suffix "pr${{ github.event.pull_request.number }}"
+          dotnet pack -c Release -o ../../artifacts --no-build --version-suffix "pr${{ github.event.pull_request.number }}"
+
+      - name: Upload PR package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-package-${{ github.event.pull_request.number }}
+          path: artifacts/*.nupkg
+          retention-days: 7
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Run security scan
+        run: |
+          dotnet list package --vulnerable --include-transitive 2>&1 | tee security-report.txt
+          if grep -q "has the following vulnerable packages" security-report.txt; then
+            echo "::warning::Vulnerable packages detected. Please review security-report.txt"
+          fi
+
+      - name: Upload security report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-report-${{ github.run_number }}
+          path: security-report.txt
+          retention-days: 30
+
+  label-pr:
+    name: Label PR
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Label PR based on files changed
+        uses: actions/labeler@v5
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true

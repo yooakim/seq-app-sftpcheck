@@ -1,0 +1,94 @@
+# Docker Compose for local development and testing of Seq.App.SftpCheck
+#
+# Usage:
+#   docker compose up -d          # Start all services
+#   docker compose logs -f        # View logs
+#   docker compose down           # Stop all services
+#   docker compose down -v        # Stop and remove volumes
+#
+# Services:
+#   - seq:          Seq log server at http://localhost:5341
+#   - sftp:         Test SFTP server with password auth at localhost:2222
+#   - sftp-keyauth: Test SFTP server with key-based auth at localhost:2223
+
+services:
+  # Seq - Log server for testing the app
+  # Web UI: http://localhost:5341
+  seq:
+    image: datalust/seq:latest
+    container_name: seq-sftpcheck-dev
+    restart: unless-stopped
+    environment:
+      # Accept the Seq EULA (required)
+      ACCEPT_EULA: "Y"
+      # Disable authentication for local development
+      SEQ_FIRSTRUN_NOAUTHENTICATION: "True"
+
+    ports:
+      # Web UI and API
+      - "5341:80"
+      # Ingestion port (optional, for direct ingestion)
+      - "5342:5341"
+    volumes:
+      # Persist Seq data between restarts
+      - seq-data:/data
+      # Mount local artifacts folder for local NuGet feed
+      - ./artifacts:/packages:ro
+    networks:
+      - sftpcheck-network
+
+  # SFTP Server with Password Authentication
+  # Connect at localhost:2222
+  # Username: testuser, Password: testpass
+  sftp:
+    image: atmoz/sftp:latest
+    container_name: sftp-test-server
+    restart: unless-stopped
+    ports:
+      - "2222:22"
+    volumes:
+      # Test files directory (optional - creates some test content)
+      - sftp-data:/home/testuser/upload
+      # SSH host keys (persist to avoid host key changes)
+      - sftp-keys:/etc/ssh/keys
+    # User format: user:password:uid:gid:directories
+    # Creates user 'testuser' with password 'testpass' and upload directory
+    command: testuser:testpass:1001:1001:upload
+    networks:
+      - sftpcheck-network
+
+  # SFTP Server with SSH Key Authentication
+  # Connect at localhost:2223
+  # Username: keyuser, Auth: SSH private key (docker/sftp/keys/test_key)
+  sftp-keyauth:
+    image: atmoz/sftp:latest
+    container_name: sftp-keyauth-server
+    restart: unless-stopped
+    ports:
+      - "2223:22"
+    volumes:
+      - sftp-keyauth-data:/home/keyuser/upload
+      - sftp-keyauth-keys:/etc/ssh/keys
+      # Mount public key for authorized_keys
+      - ./docker/sftp/keys/test_key.pub:/home/keyuser/.ssh/keys/test_key.pub:ro
+    # User format: user:password:uid:gid:directories
+    # Empty password means key-only authentication
+    command: keyuser::1002:1002:upload
+    networks:
+      - sftpcheck-network
+
+networks:
+  sftpcheck-network:
+    driver: bridge
+
+volumes:
+  seq-data:
+    name: seq-sftpcheck-data
+  sftp-data:
+    name: sftp-test-data
+  sftp-keys:
+    name: sftp-host-keys
+  sftp-keyauth-data:
+    name: sftp-keyauth-data
+  sftp-keyauth-keys:
+    name: sftp-keyauth-host-keys

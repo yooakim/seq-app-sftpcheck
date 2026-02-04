@@ -1,0 +1,59 @@
+# Docker Compose Override for Development
+#
+# This file is automatically merged with docker-compose.yml when running:
+#   docker compose up
+#
+# It contains development-specific settings that shouldn't be in production.
+#
+# To run WITHOUT this override (production-like):
+#   docker compose -f docker-compose.yml up
+
+services:
+  seq:
+    environment:
+      # Enable detailed internal logging for debugging
+      SEQ_CACHE_SYSTEMRAMTARGET: "0.5"
+      # Disable minimum free disk space check for dev
+      SEQ_STORAGE_MINIMUMSTORAGESPACE: "0"
+    # Mount the built app package for easy installation
+    # After building, copy the .nupkg to ./artifacts/ and install via Seq UI
+    volumes:
+      - seq-data:/data
+      - ./artifacts:/artifacts:ro
+
+  sftp:
+    environment:
+      # Enable debug logging for SFTP server
+      SFTP_LOG_LEVEL: debug
+    volumes:
+      - sftp-data:/home/testuser/upload
+      - sftp-keys:/etc/ssh/keys
+      # Mount a local test-files directory for easy access
+      - ./docker/sftp/test-files:/home/testuser/test-files
+
+  sftp-keyauth:
+    environment:
+      # Enable debug logging for SFTP server
+      SFTP_LOG_LEVEL: debug
+    volumes:
+      - sftp-keyauth-data:/home/keyuser/upload
+      - sftp-keyauth-keys:/etc/ssh/keys
+      # Mount public key for authorized_keys
+      - ./docker/sftp/keys/test_key.pub:/home/keyuser/.ssh/keys/test_key.pub:ro
+
+# SSH Key Authentication Setup:
+#
+# The test key pair has been generated at:
+#   - Private key: ./docker/sftp/keys/test_key
+#   - Public key:  ./docker/sftp/keys/test_key.pub
+#
+# To use the private key in Seq app settings, convert to Base64:
+#   PowerShell: [Convert]::ToBase64String([System.IO.File]::ReadAllBytes("./docker/sftp/keys/test_key"))
+#   Linux/Mac:  base64 -w 0 ./docker/sftp/keys/test_key
+#
+# Seq App Settings for key-based auth:
+#   - Host: sftp-keyauth (or localhost if testing from host)
+#   - Port: 2223 (from host) or 22 (from within Docker network)
+#   - Username: keyuser
+#   - Authentication Method: PrivateKey
+#   - Private Key (Base64): <output from base64 command above>

@@ -1,0 +1,19 @@
+# Issue Template Configuration
+# Documentation: https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository
+
+# Allow blank issues for questions or topics that don't fit the templates
+blank_issues_enabled: true
+
+# External links to show in the issue creation page
+contact_links:
+  - name: Seq Documentation
+    url: https://docs.datalust.co/
+    about: Check the official Seq documentation for general Seq questions.
+
+  - name: Seq Community
+    url: https://github.com/datalust/seq/discussions
+    about: Ask questions and discuss Seq with the community.
+
+  - name: SSH.NET Documentation
+    url: https://github.com/sshnet/SSH.NET
+    about: For questions specific to the SSH.NET library used for SFTP connections.

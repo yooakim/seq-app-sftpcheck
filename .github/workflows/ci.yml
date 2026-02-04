@@ -1,0 +1,244 @@
+# CI/CD Workflow for Seq.App.SftpCheck
+#
+# Triggers:
+#   - Push to main or dev branches
+#   - Pull requests to main or dev branches
+#   - Manual workflow dispatch
+#   - Release tags (v*)
+#
+# Jobs:
+#   - build: Build, test, and package
+#   - publish: Publish to NuGet (only on main branch or tags)
+
+name: CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
+      - dev
+  workflow_dispatch:
+    inputs:
+      publish_nuget:
+        description: "Publish to NuGet.org"
+        required: false
+        default: "false"
+        type: boolean
+
+env:
+  DOTNET_VERSION: "10.0.x"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      version_suffix: ${{ steps.version.outputs.suffix }}
+      is_release: ${{ steps.version.outputs.is_release }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for version calculation
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Calculate version
+        id: version
+        run: |
+          # Read version prefix from Directory.Build.props
+          VERSION_PREFIX=$(grep -oP '(?<=<VersionPrefix>)[^<]+' Directory.Build.props)
+          echo "Version prefix: $VERSION_PREFIX"
+
+          # Determine if this is a release build
+          IS_RELEASE="false"
+          VERSION_SUFFIX=""
+
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            # Tagged release - use tag version
+            TAG_VERSION="${{ github.ref_name }}"
+            TAG_VERSION="${TAG_VERSION#v}"  # Remove 'v' prefix
+            VERSION_PREFIX="$TAG_VERSION"
+            IS_RELEASE="true"
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            # Main branch - release candidate
+            IS_RELEASE="true"
+          else
+            # Development build
+            BRANCH_NAME="${{ github.ref_name }}"
+            BRANCH_NAME="${BRANCH_NAME//[^a-zA-Z0-9-]/}"  # Sanitize branch name
+            BRANCH_NAME="${BRANCH_NAME:0:10}"  # Limit length
+            BUILD_NUMBER="${{ github.run_number }}"
+            VERSION_SUFFIX="${BRANCH_NAME}-${BUILD_NUMBER}"
+          fi
+
+          if [ -n "$VERSION_SUFFIX" ]; then
+            FULL_VERSION="${VERSION_PREFIX}-${VERSION_SUFFIX}"
+          else
+            FULL_VERSION="${VERSION_PREFIX}"
+          fi
+
+          echo "version=$FULL_VERSION" >> $GITHUB_OUTPUT
+          echo "version_prefix=$VERSION_PREFIX" >> $GITHUB_OUTPUT
+          echo "suffix=$VERSION_SUFFIX" >> $GITHUB_OUTPUT
+          echo "is_release=$IS_RELEASE" >> $GITHUB_OUTPUT
+
+          echo "Full version: $FULL_VERSION"
+          echo "Is release: $IS_RELEASE"
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build solution
+        run: dotnet build -c Release --no-restore
+
+      - name: Run tests
+        run: dotnet test -c Release --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx" --collect:"XPlat Code Coverage"
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            **/TestResults/*.trx
+            **/TestResults/**/coverage.cobertura.xml
+          retention-days: 7
+
+      - name: Publish application
+        run: |
+          cd src/Seq.App.SftpCheck
+          if [ -n "${{ steps.version.outputs.suffix }}" ]; then
+            dotnet publish -c Release -o ./obj/publish --version-suffix "${{ steps.version.outputs.suffix }}"
+          else
+            dotnet publish -c Release -o ./obj/publish
+          fi
+
+      - name: Create NuGet package
+        run: |
+          cd src/Seq.App.SftpCheck
+          if [ -n "${{ steps.version.outputs.suffix }}" ]; then
+            dotnet pack -c Release -o ../../artifacts --no-build --version-suffix "${{ steps.version.outputs.suffix }}"
+          else
+            dotnet pack -c Release -o ../../artifacts --no-build
+          fi
+
+      - name: Upload NuGet package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-package
+          path: artifacts/*.nupkg
+          retention-days: 30
+
+      - name: Upload symbols package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: symbols-package
+          path: artifacts/*.snupkg
+          if-no-files-found: ignore
+          retention-days: 30
+
+  publish:
+    name: Publish to NuGet
+    needs: build
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_nuget == 'true')
+
+    environment:
+      name: nuget
+      url: https://www.nuget.org/packages/Seq.App.SftpCheck
+
+    steps:
+      - name: Download NuGet package
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-package
+          path: artifacts
+
+      - name: Download symbols package
+        uses: actions/download-artifact@v4
+        with:
+          name: symbols-package
+          path: artifacts
+        continue-on-error: true
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Publish to NuGet.org
+        run: |
+          for package in artifacts/*.nupkg; do
+            echo "Publishing $package"
+            dotnet nuget push "$package" \
+              --api-key ${{ secrets.NUGET_API_KEY }} \
+              --source https://api.nuget.org/v3/index.json \
+              --skip-duplicate
+          done
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+
+  release:
+    name: Create GitHub Release
+    needs: [build, publish]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download NuGet package
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-package
+          path: artifacts
+
+      - name: Download symbols package
+        uses: actions/download-artifact@v4
+        with:
+          name: symbols-package
+          path: artifacts
+        continue-on-error: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: |
+            artifacts/*.nupkg
+            artifacts/*.snupkg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,28 @@
+# CODEOWNERS - Automatic reviewer assignment for pull requests
+# Documentation: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything in the repo
+* @yooakim
+
+# Core application code
+/src/ @yooakim
+
+# Tests
+/test/ @yooakim
+
+# CI/CD and GitHub configuration
+/.github/ @yooakim
+
+# Build scripts and configuration
+/*.ps1 @yooakim
+/*.sh @yooakim
+/Directory.Build.props @yooakim
+/global.json @yooakim
+
+# Docker configuration
+/docker-compose*.yml @yooakim
+/docker/ @yooakim
+
+# Documentation
+*.md @yooakim
+/docs/ @yooakim
