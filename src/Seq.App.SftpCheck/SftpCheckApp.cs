@@ -1,4 +1,8 @@
+using System;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 using System.Timers;
 using Renci.SshNet;
 using Seq.Apps;
@@ -101,7 +105,7 @@ public class SftpCheckApp : SeqApp, ISubscribeToAsync<LogEventData>, IDisposable
     /// <summary>
     /// Gets the display name for this SFTP host (friendly name or hostname).
     /// </summary>
-    private string DisplayName => string.IsNullOrWhiteSpace(FriendlyName) ? SftpHost : FriendlyName;
+    private string DisplayName => string.IsNullOrWhiteSpace(FriendlyName) ? SftpHost : FriendlyName!;
 
     /// <summary>
     /// Called when the app is attached to Seq. Starts the scheduled checks.
@@ -218,7 +222,7 @@ public class SftpCheckApp : SeqApp, ISubscribeToAsync<LogEventData>, IDisposable
             if (!string.IsNullOrWhiteSpace(TestDirectoryPath))
             {
                 var listStopwatch = Stopwatch.StartNew();
-                var files = await Task.Run(() => client.ListDirectory(TestDirectoryPath)).ConfigureAwait(false);
+                var files = await Task.Run(() => client.ListDirectory(TestDirectoryPath!)).ConfigureAwait(false);
                 listStopwatch.Stop();
                 fileCount = files.Count();
 
@@ -288,11 +292,11 @@ public class SftpCheckApp : SeqApp, ISubscribeToAsync<LogEventData>, IDisposable
                 privateKeyFile = new PrivateKeyFile(keyStream);
             }
 
-            authMethods = [new PrivateKeyAuthenticationMethod(Username, privateKeyFile)];
+            authMethods = new AuthenticationMethod[] { new PrivateKeyAuthenticationMethod(Username, privateKeyFile) };
         }
         else
         {
-            authMethods = [new PasswordAuthenticationMethod(Username, Password!)];
+            authMethods = new AuthenticationMethod[] { new PasswordAuthenticationMethod(Username, Password!) };
         }
 
         var connectionInfo = new ConnectionInfo(SftpHost, Port, Username, authMethods)
