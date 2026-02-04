@@ -296,7 +296,7 @@ install_app() {
 
     # Restart Seq container to refresh bind mount (ensures it sees the latest package)
     print_warning "Restarting Seq container to refresh package feed..."
-    docker compose restart seq > /dev/null 2>&1
+    docker compose restart seq
     sleep 3
 
     # Get the local feed ID (find the "Local Packages" feed)
