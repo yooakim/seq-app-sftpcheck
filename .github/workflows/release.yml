@@ -1,0 +1,221 @@
+# Release Workflow for Seq.App.SftpCheck
+#
+# Triggers:
+#   - Push of version tags (v*)
+#
+# This workflow:
+#   1. Validates the tag version matches Directory.Build.props
+#   2. Builds and tests the project
+#   3. Creates the NuGet package
+#   4. Publishes to NuGet.org
+#   5. Creates a GitHub Release with release notes
+#
+# Prerequisites:
+#   - NUGET_API_KEY secret must be configured in repository settings
+#   - A GitHub environment named 'nuget' (optional, for deployment protection)
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate and extract version
+        id: version
+        run: |
+          # Extract version from tag (remove 'v' prefix)
+          TAG_VERSION="${{ github.ref_name }}"
+          VERSION="${TAG_VERSION#v}"
+
+          echo "Tag version: $VERSION"
+
+          # Validate SemVer format (basic validation)
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$ ]]; then
+            echo "::error::Invalid SemVer format: $VERSION"
+            echo "Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]"
+            exit 1
+          fi
+
+          # Extract base version (without prerelease suffix) for comparison
+          BASE_VERSION=$(echo "$VERSION" | cut -d'-' -f1)
+
+          # Read version from Directory.Build.props
+          PROPS_VERSION=$(grep -oP '(?<=<VersionPrefix>)[^<]+' Directory.Build.props)
+          echo "Directory.Build.props version: $PROPS_VERSION"
+
+          # Validate that tag version matches props version
+          if [ "$BASE_VERSION" != "$PROPS_VERSION" ]; then
+            echo "::error::Version mismatch! Tag base version ($BASE_VERSION) does not match Directory.Build.props ($PROPS_VERSION)"
+            echo "Please update Directory.Build.props to match the release version before tagging."
+            exit 1
+          fi
+
+          # Check if this is a prerelease
+          IS_PRERELEASE="false"
+          if [[ "$VERSION" == *"-"* ]]; then
+            IS_PRERELEASE="true"
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+
+          echo "Version: $VERSION"
+          echo "Is prerelease: $IS_PRERELEASE"
+
+  build:
+    name: Build & Test
+    needs: validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build solution
+        run: dotnet build -c Release --no-restore
+
+      - name: Run tests
+        run: dotnet test -c Release --no-build --verbosity normal
+
+      - name: Publish application
+        run: |
+          cd src/Seq.App.SftpCheck
+          dotnet publish -c Release -o ./obj/publish
+
+      - name: Create NuGet package
+        run: |
+          cd src/Seq.App.SftpCheck
+          dotnet pack -c Release -o ../../artifacts --no-build
+
+      - name: Upload NuGet package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-package
+          path: artifacts/*.nupkg
+          retention-days: 30
+
+      - name: Upload symbols package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: symbols-package
+          path: artifacts/*.snupkg
+          if-no-files-found: ignore
+          retention-days: 30
+
+  publish-nuget:
+    name: Publish to NuGet
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+
+    environment:
+      name: nuget
+      url: https://www.nuget.org/packages/Seq.App.SftpCheck/${{ needs.validate.outputs.version }}
+
+    steps:
+      - name: Download NuGet package
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-package
+          path: artifacts
+
+      - name: Download symbols package
+        uses: actions/download-artifact@v4
+        with:
+          name: symbols-package
+          path: artifacts
+        continue-on-error: true
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish to NuGet.org
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then
+            echo "::error::NUGET_API_KEY secret is not set. Please add it to your repository secrets."
+            exit 1
+          fi
+          for package in artifacts/*.nupkg; do
+            echo "Publishing $package"
+            dotnet nuget push "$package" \
+              --api-key "$NUGET_API_KEY" \
+              --source https://api.nuget.org/v3/index.json \
+              --skip-duplicate
+          done
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+
+  github-release:
+    name: Create GitHub Release
+    needs: [validate, build, publish-nuget]
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download NuGet package
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-package
+          path: artifacts
+
+      - name: Download symbols package
+        uses: actions/download-artifact@v4
+        with:
+          name: symbols-package
+          path: artifacts
+        continue-on-error: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ needs.validate.outputs.is_prerelease == 'true' }}
+          generate_release_notes: true
+          files: |
+            artifacts/*.nupkg
+            artifacts/*.snupkg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

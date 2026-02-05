@@ -4,11 +4,12 @@
 #   - Push to main or dev branches
 #   - Pull requests to main or dev branches
 #   - Manual workflow dispatch
-#   - Release tags (v*)
 #
 # Jobs:
 #   - build: Build, test, and package
-#   - publish: Publish to NuGet (only on main branch or tags)
+#
+# Note: Publishing to NuGet and GitHub Releases are handled by release.yml
+#       which triggers on version tags (v*)
 
 name: CI/CD
 
@@ -17,19 +18,11 @@ on:
     branches:
       - main
       - dev
-    tags:
-      - "v*"
   pull_request:
     branches:
       - main
       - dev
   workflow_dispatch:
-    inputs:
-      publish_nuget:
-        description: "Publish to NuGet.org"
-        required: false
-        default: "false"
-        type: boolean
 
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
@@ -42,21 +35,20 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       version_suffix: ${{ steps.version.outputs.suffix }}
-      is_release: ${{ steps.version.outputs.is_release }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Full history for version calculation
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
       - name: Cache NuGet packages
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
@@ -70,21 +62,14 @@ jobs:
           VERSION_PREFIX=$(grep -oP '(?<=<VersionPrefix>)[^<]+' Directory.Build.props)
           echo "Version prefix: $VERSION_PREFIX"
 
-          # Determine if this is a release build
-          IS_RELEASE="false"
+          # Determine version suffix for non-release builds
           VERSION_SUFFIX=""
 
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            # Tagged release - use tag version
-            TAG_VERSION="${{ github.ref_name }}"
-            TAG_VERSION="${TAG_VERSION#v}"  # Remove 'v' prefix
-            VERSION_PREFIX="$TAG_VERSION"
-            IS_RELEASE="true"
-          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            # Main branch - release candidate
-            IS_RELEASE="true"
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            # Main branch - no suffix (release candidate)
+            VERSION_SUFFIX=""
           else
-            # Development build
+            # Development build - add branch and build number suffix
             BRANCH_NAME="${{ github.ref_name }}"
             BRANCH_NAME="${BRANCH_NAME//[^a-zA-Z0-9-]/}"  # Sanitize branch name
             BRANCH_NAME="${BRANCH_NAME:0:10}"  # Limit length
@@ -101,10 +86,8 @@ jobs:
           echo "version=$FULL_VERSION" >> $GITHUB_OUTPUT
           echo "version_prefix=$VERSION_PREFIX" >> $GITHUB_OUTPUT
           echo "suffix=$VERSION_SUFFIX" >> $GITHUB_OUTPUT
-          echo "is_release=$IS_RELEASE" >> $GITHUB_OUTPUT
 
           echo "Full version: $FULL_VERSION"
-          echo "Is release: $IS_RELEASE"
 
       - name: Restore dependencies
         run: dotnet restore
@@ -116,7 +99,7 @@ jobs:
         run: dotnet test -c Release --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx" --collect:"XPlat Code Coverage"
 
       - name: Upload test results
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-results
@@ -144,101 +127,16 @@ jobs:
           fi
 
       - name: Upload NuGet package artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: nuget-package
           path: artifacts/*.nupkg
           retention-days: 30
 
       - name: Upload symbols package artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: symbols-package
           path: artifacts/*.snupkg
           if-no-files-found: ignore
           retention-days: 30
-
-  publish:
-    name: Publish to NuGet
-    needs: build
-    runs-on: ubuntu-latest
-    # Only publish when manually triggered with publish_nuget=true
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish_nuget == 'true'
-
-    environment:
-      name: nuget
-      url: https://www.nuget.org/packages/Seq.App.SftpCheck
-
-    steps:
-      - name: Download NuGet package
-        uses: actions/download-artifact@v7
-        with:
-          name: nuget-package
-          path: artifacts
-
-      - name: Download symbols package
-        uses: actions/download-artifact@v7
-        with:
-          name: symbols-package
-          path: artifacts
-        continue-on-error: true
-
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 10.0.x
-
-      - name: Publish to NuGet.org
-        run: |
-          if [ -z "$NUGET_API_KEY" ]; then
-            echo "::error::NUGET_API_KEY secret is not set. Please add it to your repository secrets."
-            exit 1
-          fi
-          for package in artifacts/*.nupkg; do
-            echo "Publishing $package"
-            dotnet nuget push "$package" \
-              --api-key "$NUGET_API_KEY" \
-              --source https://api.nuget.org/v3/index.json \
-              --skip-duplicate
-          done
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-
-  release:
-    name: Create GitHub Release
-    needs: [build, publish]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Download NuGet package
-        uses: actions/download-artifact@v7
-        with:
-          name: nuget-package
-          path: artifacts
-
-      - name: Download symbols package
-        uses: actions/download-artifact@v7
-        with:
-          name: symbols-package
-          path: artifacts
-        continue-on-error: true
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: ${{ github.ref_name }}
-          draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          generate_release_notes: true
-          files: |
-            artifacts/*.nupkg
-            artifacts/*.snupkg
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
