@@ -64,7 +64,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Use PAT to bypass branch protection rules
+          # Create a fine-grained PAT with 'contents: write' permission
+          # and save it as a repository secret named 'PAT'
+          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
 
       - name: Configure Git
         run: |
@@ -76,7 +79,16 @@ jobs:
         run: |
           # Read current version from Directory.Build.props
           CURRENT_VERSION=$(grep -oP '(?<=<VersionPrefix>)[^<]+' Directory.Build.props)
-          echo "Current version: $CURRENT_VERSION"
+          # Check for existing VersionSuffix
+          CURRENT_SUFFIX=$(grep -oP '(?<=<VersionSuffix>)[^<]*' Directory.Build.props || echo "")
+
+          if [ -n "$CURRENT_SUFFIX" ]; then
+            echo "Current version: $CURRENT_VERSION-$CURRENT_SUFFIX"
+            FULL_CURRENT="$CURRENT_VERSION-$CURRENT_SUFFIX"
+          else
+            echo "Current version: $CURRENT_VERSION"
+            FULL_CURRENT="$CURRENT_VERSION"
+          fi
 
           # Parse current version
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
@@ -109,21 +121,32 @@ jobs:
 
           NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
 
-          # Add prerelease suffix for tag if specified
+          # Determine prerelease suffix
+          PRERELEASE=""
           if [ -n "${{ inputs.prerelease }}" ]; then
-            TAG_VERSION="${NEW_VERSION}-${{ inputs.prerelease }}"
+            PRERELEASE="${{ inputs.prerelease }}"
+            TAG_VERSION="${NEW_VERSION}-${PRERELEASE}"
           elif [ "${{ inputs.bump_type }}" == "custom" ] && [[ "${{ inputs.custom_version }}" == *"-"* ]]; then
             # Preserve prerelease from custom version
+            PRERELEASE=$(echo "${{ inputs.custom_version }}" | cut -d'-' -f2-)
             TAG_VERSION="${{ inputs.custom_version }}"
           else
             TAG_VERSION="${NEW_VERSION}"
           fi
 
+          # Check if anything actually changes
+          if [ "$NEW_VERSION" == "$CURRENT_VERSION" ] && [ "$PRERELEASE" == "$CURRENT_SUFFIX" ]; then
+            echo "::error::New version ($TAG_VERSION) is the same as current version ($FULL_CURRENT). Nothing to bump."
+            exit 1
+          fi
+
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
           echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
 
           echo "New version prefix: $NEW_VERSION"
+          echo "Prerelease suffix: ${PRERELEASE:-none}"
           echo "Tag version: v$TAG_VERSION"
 
       - name: Check if tag already exists
@@ -138,9 +161,25 @@ jobs:
       - name: Update Directory.Build.props
         run: |
           NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          PRERELEASE="${{ steps.version.outputs.prerelease }}"
 
           # Update the VersionPrefix in Directory.Build.props
           sed -i "s|<VersionPrefix>.*</VersionPrefix>|<VersionPrefix>${NEW_VERSION}</VersionPrefix>|" Directory.Build.props
+
+          # Handle VersionSuffix
+          if [ -n "$PRERELEASE" ]; then
+            # Check if VersionSuffix element exists
+            if grep -q "<VersionSuffix>" Directory.Build.props; then
+              # Update existing VersionSuffix
+              sed -i "s|<VersionSuffix>.*</VersionSuffix>|<VersionSuffix>${PRERELEASE}</VersionSuffix>|" Directory.Build.props
+            else
+              # Add VersionSuffix after VersionPrefix
+              sed -i "s|</VersionPrefix>|</VersionPrefix>\n        <VersionSuffix>${PRERELEASE}</VersionSuffix>|" Directory.Build.props
+            fi
+          else
+            # Remove VersionSuffix if it exists (stable release)
+            sed -i "/<VersionSuffix>.*<\/VersionSuffix>/d" Directory.Build.props
+          fi
 
           echo "Updated Directory.Build.props:"
           cat Directory.Build.props
@@ -157,7 +196,12 @@ jobs:
           NEW_VERSION="${{ steps.version.outputs.new_version }}"
 
           git add Directory.Build.props
-          git commit -m "chore: bump version to ${TAG_VERSION}"
+          git commit -m "chore: bump version to ${TAG_VERSION}" || {
+            echo "::error::Failed to commit. This may be due to branch protection rules."
+            echo "::error::Please create a Personal Access Token (PAT) with 'contents: write' permission"
+            echo "::error::and add it as a repository secret named 'PAT'."
+            exit 1
+          }
           git tag -a "v${TAG_VERSION}" -m "Release v${TAG_VERSION}"
 
           echo "Created commit and tag v${TAG_VERSION}"
@@ -165,7 +209,12 @@ jobs:
       - name: Push changes
         if: ${{ inputs.dry_run == false }}
         run: |
-          git push origin ${{ github.ref_name }}
+          git push origin ${{ github.ref_name }} || {
+            echo "::error::Failed to push to branch. This is likely due to branch protection rules."
+            echo "::error::Please ensure a PAT secret is configured with 'contents: write' permission,"
+            echo "::error::or add a branch protection bypass rule for github-actions[bot]."
+            exit 1
+          }
           git push origin "v${{ steps.version.outputs.tag_version }}"
 
       - name: Summary
