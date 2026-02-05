@@ -1,0 +1,195 @@
+# Version Bump Workflow for Seq.App.SftpCheck
+#
+# This workflow automates the version bump process following SemVer:
+#   1. Updates the version in Directory.Build.props
+#   2. Commits the change
+#   3. Creates and pushes a version tag
+#   4. The tag push triggers the release.yml workflow
+#
+# Usage:
+#   1. Go to Actions > Version Bump
+#   2. Select the bump type (major, minor, patch) or specify a custom version
+#   3. Optionally add a prerelease suffix (e.g., alpha, beta, rc.1)
+#   4. Run the workflow
+#
+# Examples:
+#   - Current: 1.0.0, Bump: minor -> 1.1.0
+#   - Current: 1.0.0, Bump: major -> 2.0.0
+#   - Current: 1.0.0, Bump: patch, Prerelease: rc.1 -> 1.0.1-rc.1
+#   - Custom version: 2.0.0-beta.1 -> 2.0.0-beta.1
+
+name: Version Bump
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: "Version bump type"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - custom
+        default: patch
+      custom_version:
+        description: "Custom version (only used if bump_type is 'custom', e.g., 2.0.0)"
+        required: false
+        type: string
+      prerelease:
+        description: "Prerelease suffix (e.g., alpha, beta, rc.1) - leave empty for stable release"
+        required: false
+        type: string
+      dry_run:
+        description: "Dry run (don't push changes)"
+        required: false
+        type: boolean
+        default: false
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  bump-version:
+    name: Bump Version
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Calculate new version
+        id: version
+        run: |
+          # Read current version from Directory.Build.props
+          CURRENT_VERSION=$(grep -oP '(?<=<VersionPrefix>)[^<]+' Directory.Build.props)
+          echo "Current version: $CURRENT_VERSION"
+
+          # Parse current version
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+
+          # Calculate new version based on bump type
+          case "${{ inputs.bump_type }}" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+            custom)
+              if [ -z "${{ inputs.custom_version }}" ]; then
+                echo "::error::Custom version is required when bump_type is 'custom'"
+                exit 1
+              fi
+              # Extract base version from custom (remove any prerelease suffix for props)
+              CUSTOM="${{ inputs.custom_version }}"
+              BASE_CUSTOM=$(echo "$CUSTOM" | cut -d'-' -f1)
+              IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_CUSTOM"
+              ;;
+          esac
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+
+          # Add prerelease suffix for tag if specified
+          if [ -n "${{ inputs.prerelease }}" ]; then
+            TAG_VERSION="${NEW_VERSION}-${{ inputs.prerelease }}"
+          elif [ "${{ inputs.bump_type }}" == "custom" ] && [[ "${{ inputs.custom_version }}" == *"-"* ]]; then
+            # Preserve prerelease from custom version
+            TAG_VERSION="${{ inputs.custom_version }}"
+          else
+            TAG_VERSION="${NEW_VERSION}"
+          fi
+
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+
+          echo "New version prefix: $NEW_VERSION"
+          echo "Tag version: v$TAG_VERSION"
+
+      - name: Check if tag already exists
+        run: |
+          TAG_NAME="v${{ steps.version.outputs.tag_version }}"
+          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG_NAME already exists!"
+            exit 1
+          fi
+          echo "Tag $TAG_NAME is available"
+
+      - name: Update Directory.Build.props
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+
+          # Update the VersionPrefix in Directory.Build.props
+          sed -i "s|<VersionPrefix>.*</VersionPrefix>|<VersionPrefix>${NEW_VERSION}</VersionPrefix>|" Directory.Build.props
+
+          echo "Updated Directory.Build.props:"
+          cat Directory.Build.props
+
+      - name: Verify build
+        run: |
+          dotnet restore
+          dotnet build -c Release --no-restore
+
+      - name: Commit and tag
+        if: ${{ inputs.dry_run == false }}
+        run: |
+          TAG_VERSION="${{ steps.version.outputs.tag_version }}"
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+
+          git add Directory.Build.props
+          git commit -m "chore: bump version to ${TAG_VERSION}"
+          git tag -a "v${TAG_VERSION}" -m "Release v${TAG_VERSION}"
+
+          echo "Created commit and tag v${TAG_VERSION}"
+
+      - name: Push changes
+        if: ${{ inputs.dry_run == false }}
+        run: |
+          git push origin ${{ github.ref_name }}
+          git push origin "v${{ steps.version.outputs.tag_version }}"
+
+      - name: Summary
+        run: |
+          TAG_VERSION="${{ steps.version.outputs.tag_version }}"
+          CURRENT="${{ steps.version.outputs.current_version }}"
+          NEW="${{ steps.version.outputs.new_version }}"
+
+          echo "## Version Bump Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Previous Version | \`${CURRENT}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| New Version | \`${NEW}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag | \`v${TAG_VERSION}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Bump Type | \`${{ inputs.bump_type }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Prerelease | \`${{ inputs.prerelease || 'none' }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dry Run | \`${{ inputs.dry_run }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ inputs.dry_run }}" == "true" ]; then
+            echo "⚠️ **This was a dry run. No changes were pushed.**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ **Version bump complete!**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The tag push will trigger the [Release workflow](../actions/workflows/release.yml) automatically." >> $GITHUB_STEP_SUMMARY
+          fi
