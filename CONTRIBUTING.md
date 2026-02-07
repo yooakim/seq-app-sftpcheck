@@ -1,6 +1,6 @@
 # Contributing to Seq.App.SftpCheck
 
-Thank you for your interest in contributing to Seq.App.SftpCheck! This document provides guidelines and information for contributors.
+This document provides guidelines and information for contributors.
 
 ## Table of Contents
 
@@ -26,9 +26,9 @@ Thank you for your interest in contributing to Seq.App.SftpCheck! This document 
 ### Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop) (for local testing)
+- [Docker](https://www.docker.com/) (for local testing) - Docker Engine on Linux or Docker Desktop on Windows/macOS(for local testing)
 - [seqcli](https://github.com/datalust/seqcli) (optional): `dotnet tool install -g seqcli`
-- A code editor (VS Code, Visual Studio, Rider, etc.)
+- A code editor (Zed, VS Code, Visual Studio, Rider, etc.)
 
 ### Setting Up the Development Environment
 
