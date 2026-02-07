@@ -10,6 +10,7 @@
     <PackageId>Seq.App.SftpCheck</PackageId>
     <Description>Periodically checks SFTP host connectivity and logs results to Seq.</Description>
     <Authors>Joakim Westin</Authors>
+    <Copyright>Copyright © Joakim Westin</Copyright>
     <PackageTags>seq-app</PackageTags>
     <PackageProjectUrl>https://github.com/yooakim/seq-app-sftpcheck</PackageProjectUrl>
     <PackageIcon>seq-app-sftpcheck.png</PackageIcon>
