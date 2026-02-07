@@ -11,8 +11,9 @@
 #   5. Creates a GitHub Release with release notes
 #
 # Prerequisites:
-#   - NUGET_API_KEY secret must be configured in repository settings
-#   - A GitHub environment named 'nuget' (optional, for deployment protection)
+#   - Trusted Publishing must be configured on NuGet.org for this repository
+#     (see: https://docs.nuget.org/contribute/trusted-publishers)
+#   - A GitHub environment named 'nuget' must exist (used for OIDC token exchange)
 
 name: Release
 
@@ -140,6 +141,9 @@ jobs:
     needs: [validate, build]
     runs-on: ubuntu-latest
 
+    permissions:
+      id-token: write # Required for Trusted Publishing (OIDC)
+
     environment:
       name: nuget
       url: https://www.nuget.org/packages/Seq.App.SftpCheck/${{ needs.validate.outputs.version }}
@@ -163,21 +167,14 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Publish to NuGet.org
+      - name: Publish to NuGet.org (Trusted Publishing)
         run: |
-          if [ -z "$NUGET_API_KEY" ]; then
-            echo "::error::NUGET_API_KEY secret is not set. Please add it to your repository secrets."
-            exit 1
-          fi
           for package in artifacts/*.nupkg; do
             echo "Publishing $package"
             dotnet nuget push "$package" \
-              --api-key "$NUGET_API_KEY" \
               --source https://api.nuget.org/v3/index.json \
               --skip-duplicate
           done
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
 
   github-release:
     name: Create GitHub Release
