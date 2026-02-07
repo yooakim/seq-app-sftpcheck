@@ -13,6 +13,7 @@
     <PackageTags>seq-app</PackageTags>
     <PackageProjectUrl>https://github.com/yooakim/seq-app-sftpcheck</PackageProjectUrl>
     <PackageIcon>seq-app-sftpcheck.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/yooakim/seq-app-sftpcheck</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
@@ -36,6 +37,7 @@
   -->
   <ItemGroup>
     <None Include="../../asset/seq-app-sftpcheck.png" Pack="true" Visible="false" PackagePath="" />
+    <None Include="../../README.md" Pack="true" PackagePath="" />
     <None Include="../../LICENSE" Pack="true" PackagePath="" />
     <!-- Include published DLLs except for assemblies provided by Seq -->
     <None Include="./obj/publish/**/*"
