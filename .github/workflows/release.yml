@@ -170,7 +170,7 @@ jobs:
       - name: Login to NuGet (Trusted Publishing)
         uses: nuget/login@v1
         with:
-          nuget-server: https://api.nuget.org/v3/index.json
+          user: yooakim
 
       - name: Publish to NuGet.org
         run: |
