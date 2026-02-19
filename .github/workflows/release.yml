@@ -36,7 +36,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Validate and extract version
         id: version
@@ -87,15 +87,15 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
 
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
@@ -122,14 +122,14 @@ jobs:
           dotnet pack -c Release -o ../../artifacts --no-build
 
       - name: Upload NuGet package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: nuget-package
           path: artifacts/*.nupkg
           retention-days: 30
 
       - name: Upload symbols package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: symbols-package
           path: artifacts/*.snupkg
@@ -150,20 +150,20 @@ jobs:
 
     steps:
       - name: Download NuGet package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: nuget-package
           path: artifacts
 
       - name: Download symbols package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: symbols-package
           path: artifacts
         continue-on-error: true
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
 
@@ -193,18 +193,18 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Download NuGet package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: nuget-package
           path: artifacts
 
       - name: Download symbols package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: symbols-package
           path: artifacts
