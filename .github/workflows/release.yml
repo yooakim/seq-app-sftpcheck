@@ -125,14 +125,14 @@ jobs:
           dotnet pack -c Release -o ../../artifacts --no-build
 
       - name: Upload NuGet package artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-package
           path: artifacts/*.nupkg
           retention-days: 30
 
       - name: Upload symbols package artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: symbols-package
           path: artifacts/*.snupkg
@@ -153,13 +153,13 @@ jobs:
 
     steps:
       - name: Download NuGet package
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: nuget-package
           path: artifacts
 
       - name: Download symbols package
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: symbols-package
           path: artifacts
@@ -201,13 +201,13 @@ jobs:
           fetch-depth: 0
 
       - name: Download NuGet package
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: nuget-package
           path: artifacts
 
       - name: Download symbols package
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: symbols-package
           path: artifacts

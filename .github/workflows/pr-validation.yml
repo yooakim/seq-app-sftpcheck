@@ -71,7 +71,7 @@ jobs:
             --results-directory ./TestResults
 
       - name: Upload test results
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results-${{ github.run_number }}
@@ -96,7 +96,7 @@ jobs:
           dotnet pack -c Release -o ../../artifacts --no-build --version-suffix "pr${{ github.event.pull_request.number }}"
 
       - name: Upload PR package artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: pr-package-${{ github.event.pull_request.number }}
           path: artifacts/*.nupkg
@@ -126,7 +126,7 @@ jobs:
           fi
 
       - name: Upload security report
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: security-report-${{ github.run_number }}
