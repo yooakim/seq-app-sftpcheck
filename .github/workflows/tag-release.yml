@@ -1,0 +1,74 @@
+# Tag Release Workflow for Seq.App.SftpCheck
+#
+# Automatically creates a version tag when a version-bump PR is merged.
+# The tag push then triggers the release.yml workflow.
+#
+# Trigger: PR merge to main from a release/* branch
+
+name: Tag Release
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+
+jobs:
+  tag:
+    name: Create Version Tag
+    if: >-
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/v')
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from branch name
+        id: version
+        run: |
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          # Extract version from branch name: release/v1.2.3 -> v1.2.3
+          TAG="${BRANCH#release/}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Tag to create: $TAG"
+
+      - name: Validate version matches Directory.Build.props
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          VERSION="${TAG#v}"
+          BASE_VERSION=$(echo "$VERSION" | cut -d'-' -f1)
+
+          PROPS_VERSION=$(grep -oP '(?<=<VersionPrefix>)[^<]+' Directory.Build.props)
+
+          if [ "$BASE_VERSION" != "$PROPS_VERSION" ]; then
+            echo "::error::Version mismatch! Tag base version ($BASE_VERSION) does not match Directory.Build.props ($PROPS_VERSION)"
+            exit 1
+          fi
+
+          echo "Version validated: $VERSION matches Directory.Build.props ($PROPS_VERSION)"
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create and push tag
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+          echo "## Tag Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Tag \`$TAG\` has been created and pushed." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The [Release workflow](../actions/workflows/release.yml) will now run automatically." >> $GITHUB_STEP_SUMMARY

@@ -2,8 +2,8 @@
 #
 # This workflow automates the version bump process following SemVer:
 #   1. Updates the version in Directory.Build.props
-#   2. Commits the change
-#   3. Creates and pushes a version tag
+#   2. Creates a PR with the version bump
+#   3. After the PR is merged, tag-release.yml creates the version tag
 #   4. The tag push triggers the release.yml workflow
 #
 # Usage:
@@ -11,6 +11,7 @@
 #   2. Select the bump type (major, minor, patch) or specify a custom version
 #   3. Optionally add a prerelease suffix (e.g., alpha, beta, rc.1)
 #   4. Run the workflow
+#   5. Review and merge the created PR
 #
 # Examples:
 #   - Current: 1.0.0, Bump: minor -> 1.1.0
@@ -42,7 +43,7 @@ on:
         required: false
         type: string
       dry_run:
-        description: "Dry run (don't push changes)"
+        description: "Dry run (don't create PR)"
         required: false
         type: boolean
         default: false
@@ -58,6 +59,7 @@ jobs:
 
     permissions:
       contents: write
+      pull-requests: write
 
     steps:
       - name: Checkout repository
@@ -150,23 +152,40 @@ jobs:
           dotnet restore
           dotnet build -c Release --no-restore
 
-      - name: Commit and tag
+      - name: Create branch and PR
         if: ${{ inputs.dry_run == false }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG_VERSION="${{ steps.version.outputs.tag_version }}"
-          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          CURRENT_VERSION="${{ steps.version.outputs.current_version }}"
+          BRANCH_NAME="release/v${TAG_VERSION}"
 
+          git checkout -b "$BRANCH_NAME"
           git add Directory.Build.props
           git commit -m "chore: bump version to ${TAG_VERSION}"
-          git tag -a "v${TAG_VERSION}" -m "Release v${TAG_VERSION}"
+          git push origin "$BRANCH_NAME"
 
-          echo "Created commit and tag v${TAG_VERSION}"
+          # Ensure the version-bump label exists
+          gh label create "version-bump" --description "Automated version bump" --color "0E8A16" 2>/dev/null || true
 
-      - name: Push changes
-        if: ${{ inputs.dry_run == false }}
-        run: |
-          git push origin ${{ github.ref_name }}
-          git push origin "v${{ steps.version.outputs.tag_version }}"
+          gh pr create \
+            --title "chore: bump version to v${TAG_VERSION}" \
+            --body "$(cat <<EOF
+          ## Version Bump
+
+          | Item | Value |
+          |------|-------|
+          | Previous Version | \`${CURRENT_VERSION}\` |
+          | New Version | \`${TAG_VERSION}\` |
+          | Bump Type | \`${{ inputs.bump_type }}\` |
+          | Prerelease | \`${{ inputs.prerelease || 'none' }}\` |
+
+          Once merged, the version tag \`v${TAG_VERSION}\` will be created automatically, triggering the [Release workflow](../actions/workflows/release.yml).
+          EOF
+          )" \
+            --label "version-bump" \
+            --base main
 
       - name: Summary
         run: |
@@ -187,9 +206,9 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if [ "${{ inputs.dry_run }}" == "true" ]; then
-            echo "⚠️ **This was a dry run. No changes were pushed.**" >> $GITHUB_STEP_SUMMARY
+            echo ":warning: **This was a dry run. No changes were pushed.**" >> $GITHUB_STEP_SUMMARY
           else
-            echo "✅ **Version bump complete!**" >> $GITHUB_STEP_SUMMARY
+            echo ":white_check_mark: **Pull request created!**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "The tag push will trigger the [Release workflow](../actions/workflows/release.yml) automatically." >> $GITHUB_STEP_SUMMARY
+            echo "Review and merge the PR to trigger the release." >> $GITHUB_STEP_SUMMARY
           fi
